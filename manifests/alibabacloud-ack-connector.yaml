@@ -1,0 +1,230 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ack
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ack-connector-user-impersonation
+  labels:
+    ack/creator: "ack"
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - users
+    verbs:
+      - impersonate
+    resourceNames:
+      - %ALIBABACLOUD_UID%
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ack-connector-user-impersonation-binding
+  labels:
+    ack/creator: "ack"
+subjects:
+  - kind: ServiceAccount
+    name: ack
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: ack-connector-user-impersonation
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ack-connector-default
+  labels:
+    ack/creator: "ack"
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ack-connector-default-binding
+  labels:
+    ack/creator: "ack"
+subjects:
+  - kind: ServiceAccount
+    name: ack
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: ack-connector-default
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ack-connector-default
+  namespace: kube-system
+  labels:
+    ack/creator: "ack"
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - ack-agent-config
+      - provider
+    verbs:
+      - get
+      - watch
+      - update
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ack-connector-default
+  namespace: kube-system
+  labels:
+    ack/creator: "ack"
+subjects:
+  - kind: ServiceAccount
+    name: ack
+    namespace: kube-system
+roleRef:
+  kind: Role
+  name: ack-connector-default
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alibabacloud-ack-connector
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alibabacloud-ack-connector
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: alibabacloud-ack-connector
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: NotIn
+                    values:
+                      - windows
+                  - key: type
+                    operator: NotIn
+                    values:
+                      - virtual-kubelet
+                  - key: k8s.aliyun.com
+                    operator: NotIn
+                    values:
+                      - "true"
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - alibabacloud-ack-connector
+                topologyKey: kubernetes.io/hostname
+      serviceAccountName: ack
+      containers:
+        - name: alibabacloud-ack-connector
+          imagePullPolicy: Always
+          env:
+            - name: ALI_STUB_REGISTER_ADDR
+              value: "%ACK_API_SERVER%:5533"
+            - name: ACK_CA_CHECKSUM
+              value: ""
+            - name: ACK_CLUSTER
+              value: "true"
+            - name: ACK_K8S_MANAGED
+              value: "true"
+            - name: KUBERNETES_CLUSTER_ID
+              value: "%ACK_KUBERNETES_CLUSTER_ID%"
+            - name: INTERNAL_ENDPOINT
+              value: "false"
+            - name: REGION
+              value: "%REGION%"
+            - name: TUNNELS_PER_AGENT
+              value: "10"
+          image: %ALIBABACLOUD_ACK_CONNECTOR_IMAGE%
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 10254
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 10254
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            limits:
+              cpu: 100m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 100Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: %ALIBABACLOUD_UID%-cluster-admin-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: %ALIBABACLOUD_UID%
+---
+apiVersion: v1
+data:
+  addNodeScriptPath: ""
+kind: ConfigMap
+metadata:
+  name: ack-agent-config
+  namespace: kube-system
+---
+apiVersion: v1
+data:
+  provider: ""
+kind: ConfigMap
+metadata:
+  name: provider
+  namespace: kube-system

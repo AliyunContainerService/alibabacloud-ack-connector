@@ -4,7 +4,7 @@ AlibabaCloud ACK Connector is a client-side agent that connects any Kubernetes c
 
 ## How it works
 
-AlibabaCloud ACK Connector runs in Kubernetes as a Deployment, the request from ACK to Kubernetes is like below:
+AlibabaCloud ACK Connector runs in Kubernetes as a Deployment, the request from ACK to the connected Kubernetes is like below:
 
 ![howitworks](docs/images/howitworks.png)
 
